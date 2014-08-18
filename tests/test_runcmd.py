@@ -6,6 +6,7 @@ __author__ = 'Chang'
 import os
 import sys
 import subprocess
+import cStringIO
 import unittest
 
 # add module's root folder as part of search path
@@ -19,7 +20,7 @@ _cmds = {
 
     'win32': {
         'sleep': 'ping -w 1000 -n %d 1.1.1.1 >NUL',
-        'ls'   : 'dir/w',
+        'ls'   : 'dir',
         'echo' : 'echo %s',
         'no_shell': '%s -c "print \'Hello World\'"' % (sys.executable)
     },
@@ -85,9 +86,32 @@ class RunCmdTest(unittest.TestCase):
         self.assertEqual(ret, 0)
         self.assertEqual(out, o)
 
+    def test_no_cmd(self):
+        """ pass in no command, either as None or empty string.
+        """
+        cmd = RunCmd()
+
+        ret, out = cmd.run(None)
+        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, 0)
+
+        ret, out = cmd.run('')
+        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, 0)
+
+    def test_null_fd(self):
+        """ Passed in None for the file object
+        """
+        try:
+            cmd = RunCmd()
+            cmd.run_fd(test_cmds['no_shell'], None)
+        except RunCmdInvalidInputError:
+            return
+
+        self.assertTrue(False)
+
     def test_no_shell(self):
-        """ run a command without using the shell. Pass a simple print statement
-            to the python interpreter.
+        """ Run a command without using the shell.
         """
         cmd = RunCmd()
         ret, out = cmd.run(test_cmds['no_shell'], timeout=0, shell=False)
@@ -128,15 +152,16 @@ class RunCmdTest(unittest.TestCase):
         """
         cmd = RunCmd()
         try:
-            print cmd.run(test_cmds['echo'] % ('Hello'), timeout=0, shell=False)
+            print cmd.run(test_cmds['echo'] % ('Hello'), shell=False)
         except RunCmdInvalidInputError:
             return
 
         self.assertTrue(False)
 
     #TODO
-    #   1. Test how it handles interrupts
+    #   1. Test for RunCmdInterruptError.
     #   2. Test forced killing of children process.
+    #   3. Test _PipeData?
 
 def main():
     unittest.main()

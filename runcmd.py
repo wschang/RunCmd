@@ -10,7 +10,8 @@ import traceback
 import signal
 import array
 
-# defined WindoowsError exception if it 
+# defined WindowsError exception for platforms which
+# do not have it
 if not getattr(__builtins__, "WindowsError", None):
     class WindowsError(OSError):
         pass
@@ -52,12 +53,12 @@ class _PipeData(threading.Thread):
 
     def __init__(self, dest_file):
         r, w = os.pipe()
-        self._out_file    = os.fdopen(r, 'rb')
-        self.in_fd        = w
+        self._out_file = os.fdopen(r, 'rb')
+        self.in_fd = w
         self._dest_file = dest_file
         self._finish_read = True
-        self.is_stop     = True
-        self._buffer     = array.array('B', (0 for i in xrange(_PipeData.CHUNK_SIZE)))
+        self.is_stop = True
+        self._buffer = array.array('B', (0 for _ in xrange(_PipeData.CHUNK_SIZE)))
 
         super(_PipeData, self).__init__()
 
@@ -132,8 +133,16 @@ class RunCmd(object):
         return self.returncode, buff
 
     def run_fd(self, cmd, out_file, timeout=0, shell=False, cwd=None):
-        timeout = sys.maxint if timeout == 0 else timeout
+
         self.cmd = cmd
+        if not cmd or len(cmd) == 0:
+            self.returncode = 0
+            return
+
+        if not out_file:
+            raise RunCmdInvalidInputError(cmd, 'Error: "out_file" expected a file object, receive None instead')
+
+        timeout = sys.maxint if timeout == 0 else timeout
         pipe = _PipeData(out_file)
 
         try:
