@@ -10,6 +10,12 @@ import traceback
 import signal
 import array
 
+# defined WindoowsError exception if it 
+if not getattr(__builtins__, "WindowsError", None):
+    class WindowsError(OSError):
+        pass
+
+
 class RunCmdError(Exception):
     """
     Base exception for RunCmd.
@@ -19,7 +25,7 @@ class RunCmdError(Exception):
         self._out = out
 
     def __str__(self):
-        return 'Command \"{0}\" raised exception\n. {1}'.format(self._cmd, self._out)
+        return 'Command \"%s\" raised exception\n. %s' % (self._cmd, self._out)
 
 
 class RunCmdInvalidInputError(RunCmdError):
@@ -147,9 +153,9 @@ class RunCmd(object):
                                      stderr=subprocess.STDOUT,
                                      preexec_fn=os.setsid)
 
-        except (ValueError, WindowsError):
+        except (ValueError, WindowsError, OSError):
             self.returncode = RunCmd.INVALID_INPUT_ERR
-
+            
             _tmp = cStringIO.StringIO()
             traceback.print_exc(file=_tmp)
             _tmp_stacktrace = _tmp.getvalue()
@@ -197,7 +203,7 @@ class RunCmd(object):
         # Popen.kill() does not kill processes in Windows, only attempts to terminate it, hence
         # we need to kill process here.
         if sys.platform == 'win32':
-            k = subprocess.Popen('TASKKILL /PID {0} /T /F >NUL 2>&1'.format(pid), shell=True)
+            k = subprocess.Popen('TASKKILL /PID %d /T /F >NUL 2>&1' % (pid), shell=True)
             k.communicate()
         else:
             pid = -pid
@@ -206,18 +212,9 @@ class RunCmd(object):
 
 
 def main():
-
-    if sys.platform == 'win32':
-        sleep_cmd = 'ping -w 1000 -n {0} 1.1.1.1 >NUL'
-    else:
-        sleep_cmd = 'sleep {0}'
-
-    test = '{0} -c "print \'Hello World\'"'.format(sys.executable)
-    test = 'echo Hello'
-    test = '{0} -c "import sys\nsys.exit(-1)"'.format(sys.executable)
-
     cmd = RunCmd()
-    print cmd.run(sleep_cmd.format(10), timeout=0, shell=True)
+    print cmd.run("ls -la", shell=False)
+    #print cmd.run('%s -c "print \'Hello World\'"' % sys.executable, shell=False)
 
 
 

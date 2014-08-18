@@ -18,17 +18,17 @@ from runcmd import *
 _cmds = {
 
     'win32': {
-        'sleep': 'ping -w 1000 -n {0} 1.1.1.1 >NUL',
+        'sleep': 'ping -w 1000 -n %d 1.1.1.1 >NUL',
         'ls'   : 'dir/w',
-        'echo' : 'echo {0}',
-        'hello': '{0} -c "print \'Hello World\'"'.format(sys.executable)
+        'echo' : 'echo %s',
+        'no_shell': '%s -c "print \'Hello World\'"' % (sys.executable)
     },
 
-    'linux': {
-        'sleep': 'sleep {0}',
+    'linux2': {
+        'sleep': 'sleep %d',
         'ls'   : 'ls',
-        'echo' : 'echo {0}',
-        'hello': '{0} -c "print \'Hello World\'"'.format(sys.executable)
+        'echo' : 'echo %s',
+        'no_shell': 'ls'
     }
 }
 
@@ -64,7 +64,7 @@ class RunCmdTest(unittest.TestCase):
         """ Run a sleep command for 10s timeout in 2s
         """
         cmd = RunCmd()
-        cmd.run(test_cmds['sleep'].format(10), timeout=1, shell=True)
+        cmd.run(test_cmds['sleep'] % (10), timeout=1, shell=True)
         self.assertEqual(cmd.returncode, RunCmd.TIMEOUT_ERR)
 
     def test_set_cwd(self):
@@ -90,9 +90,9 @@ class RunCmdTest(unittest.TestCase):
             to the python interpreter.
         """
         cmd = RunCmd()
-        ret, out = cmd.run(test_cmds['hello'], timeout=0, shell=False)
+        ret, out = cmd.run(test_cmds['no_shell'], timeout=0, shell=False)
 
-        p = subprocess.Popen(test_cmds['hello'],
+        p = subprocess.Popen(test_cmds['no_shell'],
                              shell=False,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
@@ -128,7 +128,7 @@ class RunCmdTest(unittest.TestCase):
         """
         cmd = RunCmd()
         try:
-            print cmd.run(test_cmds['echo'].format('Hello'), timeout=0, shell=False)
+            print cmd.run(test_cmds['echo'] % ('Hello'), timeout=0, shell=False)
         except RunCmdInvalidInputError:
             return
 
