@@ -33,8 +33,12 @@ _cmds = {
     }
 }
 
-# points to the correct set of commands per platform
-test_cmds = _cmds[sys.platform]
+# points to the correct set of commands per platform. Defaults to
+# the linux set of commands if the platform cannot be found.
+try:
+    test_cmds = _cmds[sys.platform]
+except KeyError:
+    test_cmds = _cmds['linux2']
 
 
 class RunCmdTest(unittest.TestCase):

@@ -73,6 +73,9 @@ class _PipeData(threading.Thread):
         Args:
             dest_file: file object where the data will be written into.
         """
+        # we expect the dest file to be passed in.
+        assert dest_file
+
         r, w = os.pipe()
         self._out_file = os.fdopen(r, 'rb')
         self.in_fd = w
@@ -132,30 +135,32 @@ class _PipeData(threading.Thread):
             self._out_file.close()
 
     def __del__(self):
+        """ Stop the monitoring process if object gets deleted.
+        """
         self.stop_monitor()
 
 
 class RunCmd(object):
     """ Runs a command in a subprocess and wait for it to return or timeout.
 
-    This is a simple replacement the usual subprocess usage pattern:
+    This is a substitute for a common subprocess usage pattern:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         ret, out = p.communicate()
 
-    Except it supports a timeout, where the command can be terminated if it exceeds
-    a given amount of time. It is a blocking call, and will wait for the command
-    to return or timeout.
+    With additional support for a timeout for the command. This is a blocking call,
+    which will wait for either the command to complete or a timeout to occur.
 
     Attributes:
         returncode  : The return code as returned from the process. There are also special
                       returncode values set if RunCmd encounters issues running the command.
+                      See Error ReturnCode section for more details.
         cmd         : The command used.
 
-        Error returncodes:
-            INVALID_INPUT_ERR: invalid parameters were used.
-            INTERRUPT_ERR    : command was interrupted, e.g. Keyboard interrupt signal sent
-            TIMEOUT_ERR      : runtime of command has exceed set timeout and was forced to
-                               terminate.
+    Error ReturnCode:
+        INVALID_INPUT_ERR: Invalid parameters were used.
+        INTERRUPT_ERR    : Command was interrupted, e.g. Keyboard interrupt signal sent
+        TIMEOUT_ERR      : Runtime of command has exceed set timeout and was forced to
+                           terminate.
     """
 
     WAIT_INTERVAL = 0.5
@@ -172,14 +177,23 @@ class RunCmd(object):
     def run(self, cmd, timeout=0, shell=False, cwd=None):
         """ Runs the command and return the return code and output.
 
-        This is similar to Popen.communicate().
+        This is similar to Popen.communicate().Note that it is assumed the output of the command
+        will not exceed the available memory. For larger outputs, use cmd_fd()
 
         Args:
-            cmd     : command to run.
-            timeout : seconds to wait before terminating command.
-            shell:
-            cwd:
-        :return:
+            cmd     : Command to run.
+            timeout : Seconds to wait before terminating command. Timeout must be an positive integer.
+                      If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
+            shell   : Boolean to indicate if the shell should be invoked or not. Defaults to False.
+            cwd:    : Directory to run command in. If none is given the command will be run in the
+                      current directory. Default is None.
+        Returns:
+            A tuple of (returncode, out) where returncode is the returncode from the subprocess and
+            out is a buffer containing the output.
+
+        Exceptions:
+            RunCmdInvalidInputError : Command had invalid parameters.
+            RunCmdInterruptError    : Command was interrupted, e.g. a Keyboard interrupt signal.
         """
         f = cStringIO.StringIO()
         # In the event of an exception, we attempt to close the string buffer "f"
@@ -193,14 +207,32 @@ class RunCmd(object):
         return self.returncode, buff
 
     def run_fd(self, cmd, out_file, timeout=0, shell=False, cwd=None):
+        """ Runs the command and writes the output into the user specified file object.
 
+        Similar to RunCmd.run() but allows user to specify a file object where the output will be
+        written into. The returncode can be retrieved from the member value, returncode.
+
+        Args:
+            cmd     : Command to run.
+            out_file: File object which the command will write its output to.
+            timeout : Seconds to wait before terminating command. Timeout must be an positive integer.
+                      If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
+            shell   : Boolean to indicate if the shell should be invoked or not. Defaults to False.
+            cwd:    : Directory to run command in. If none is given the command will be run in the
+                      current directory. Default is None.
+        Exceptions:
+            RunCmdInvalidInputError : Command had invalid parameters.
+            RunCmdInterruptError    : Command was interrupted, e.g. a Keyboard interrupt signal.
+        """
         self.cmd = cmd
-        if not cmd or len(cmd) == 0:
+        if cmd is None or len(cmd) == 0:
             self.returncode = 0
             return
 
-        if not out_file:
-            raise RunCmdInvalidInputError(cmd, 'Error: "out_file" expected a file object, receive None instead')
+        if out_file is None:
+            raise RunCmdInvalidInputError(cmd,
+                                          'Error: "out_file" parameter expected a file object,'
+                                          'receive None instead')
 
         timeout = sys.maxint if int(timeout) <= 0 else int(timeout)
         pipe = _PipeData(out_file)
@@ -281,11 +313,58 @@ class RunCmd(object):
 
 
 def main():
+    """ Provides a command line interface to RunCmd.run(). The output is printed out to stdout.
+
+    Returns 0 if command was run successfully, otherwise an error had occurred.
+    """
+    import optparse
+
+    parser = optparse.OptionParser()
+    parser.add_option('-c', '--cmd',
+                      action='store',
+                      type='string',
+                      dest='cmd',
+                      help='Command to run. Must be enclosed in double quotes, e.g. -c"echo Hello"')
+
+    parser.add_option('-t', '--timeout',
+                      action='store',
+                      type='int',
+                      default=0,
+                      dest='timeout',
+                      help='Time in seconds to wait for the command to finish before forcibly '
+                           'terminating it. Defaults to 0 which makes it wait indefinitely.')
+
+    parser.add_option('-s', '--shell',
+                      action='store_true',
+                      default=False,
+                      dest='is_shell',
+                      help='Set to run command with a shell. Defaults to no shell.')
+
+    parser.add_option('-d', '--cwd',
+                      action='store',
+                      type='string',
+                      dest='dir',
+                      help="Path to directory where the command will be run in. "
+                           "Default is the current directory")
+
+    (options, args) = parser.parse_args()
+
+    if options.cmd is None:
+        print "No command supplied. Exiting now."
+        return 0
+
     cmd = RunCmd()
-    print cmd.run("dir", shell=False)
-    #print cmd.run('%s -c "print \'Hello World\'"' % sys.executable, shell=False)
+    returncode, out = cmd.run(options.cmd.strip('"'),
+                              timeout=options.timeout,
+                              shell=options.is_shell,
+                              cwd=options.dir)
+    print out
+    return returncode
 
 
 
 if __name__ == "__main__":
-    main()
+    returncode = main()
+    sys.exit(returncode)
+
+
