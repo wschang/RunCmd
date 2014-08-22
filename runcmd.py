@@ -19,7 +19,6 @@ if not getattr(__builtins__, "WindowsError", None):
     class WindowsError(OSError):
         pass
 
-
 class RunCmdError(Exception):
     """
     Base exception for RunCmd.
@@ -30,6 +29,17 @@ class RunCmdError(Exception):
 
     def __str__(self):
         return 'Command \"%s\" raised exception\n. %s' % (self._cmd, self._out)
+
+
+class RunCmdInternalError(RunCmdError):
+    """
+    An internal error has occurred. This is an error you do not want to see.
+    """
+    def __init__(self, err_msg):
+        self.err_msg = err_msg
+
+    def __str__(self):
+        return self.err_msg
 
 
 class RunCmdInvalidInputError(RunCmdError):
@@ -50,21 +60,26 @@ class RunCmdInterruptError(RunCmdError):
 
 class _PipeData(threading.Thread):
     """ A pipe which continuously reads from a source and writes to a destination file object
-    in a background thread.
+    in the background.
 
-    Once the pipe has finished reading, it cannot be restarted. Instead, a
-    new PipeData object must be created.
+    Use the "with" statement to manage the context of the _PipeData instance,
+    i.e. "with _PipeData(out_file) as pipe"
+
+    Once the pipe has finished, it cannot be reused. Instead, a new PipeData instance must be
+    created.
 
     Attributes:
         is_stop     : boolean indicating if the pipe has finished reading from the source.
         in_fd       : file descriptor representing the input to the pipe. Pass this to the
                       source of the data to be read
-        dest_file   : the destination file object. This is the file where the data is written out to
+        dest_file   : the destination file object. This is the file where the data is
+                      written out to
 
         _out_file   : an internal file object representing the output of pipe.
         _finish_read : boolean to indicate when the pipe has finished reading from the source.
         _buffer     : a buffer used to temporarily store the chunks of data read from the source.
     """
+    # Number of bytes to read in at a time.
     CHUNK_SIZE = 1024
 
     def __init__(self, dest_file):
@@ -74,26 +89,28 @@ class _PipeData(threading.Thread):
             dest_file: file object where the data will be written into.
         """
         # we expect the dest file to be passed in.
-        assert dest_file
-
+        if dest_file is None:
+            raise RunCmdInternalError('Error: _PipeData expects a file object for parameter '
+                                      '"dest_file"')
         r, w = os.pipe()
-        self._out_file = os.fdopen(r, 'rb')
+        self.is_stop = False
         self.in_fd = w
         self._dest_file = dest_file
-        self._finish_read = True
-        self.is_stop = True
+        self._out_file = os.fdopen(r, 'rb')
+        self._finish_read = False
         self._buffer = array.array('B', (0 for _ in xrange(_PipeData.CHUNK_SIZE)))
 
         super(_PipeData, self).__init__()
 
-    def start_monitor(self):
-        """ Start reading from the source.
+    def __enter__(self):
+        if self.is_stop:
+            raise RunCmdInternalError('Error: _PipeData instance cannot be used twice.')
 
-         Users must first set "in_fd" to a source first before calling this.
-        """
-        self._finish_read = False
-        self.is_stop = False
         self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._stop()
 
     def run(self):
         """ Continuously read from the source and write to the destination file object until
@@ -119,25 +136,28 @@ class _PipeData(threading.Thread):
             read_size = self._out_file.readinto(self._buffer)
         self._dest_file.flush()
 
-    def stop_monitor(self):
+    def _stop(self):
         """ Signal to pipe to stop reading from in_fd and write everything out.
 
         Once this is called, this object cannot be run again.
         """
-        if not self.is_stop:
-            # Close the write end of pipe. Wait until everything has been read
-            # from the pipe before closing the read end of the pipe as well.
-            self.is_stop = True
-            os.close(self.in_fd)
-            while not self._finish_read:
-                time.sleep(0.1)
+        if self.is_stop:
+            return
 
-            self._out_file.close()
+        # Close the write end of pipe. Wait until everything has been read
+        # from the pipe before closing the read end of the pipe as well.
+        self.is_stop = True
+        os.close(self.in_fd)
+        while not self._finish_read:
+            time.sleep(0.1)
+
+        self._out_file.close()
+        self.join()
 
     def __del__(self):
         """ Stop the monitoring process if object gets deleted.
         """
-        self.stop_monitor()
+        self._stop()
 
 
 class RunCmd(object):
@@ -171,7 +191,7 @@ class RunCmd(object):
     def __init__(self):
         """ Constructor
         """
-        self.returncode = -1
+        self.return_code = -1
         self.cmd = ''
 
     def run(self, cmd, timeout=0, shell=False, cwd=None):
@@ -182,8 +202,8 @@ class RunCmd(object):
 
         Args:
             cmd     : Command to run.
-            timeout : Seconds to wait before terminating command. Timeout must be an positive integer.
-                      If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
+            timeout : Seconds to wait before terminating command. Timeout must be an positive
+                      integer. If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
             shell   : Boolean to indicate if the shell should be invoked or not. Defaults to False.
             cwd:    : Directory to run command in. If none is given the command will be run in the
                       current directory. Default is None.
@@ -204,7 +224,7 @@ class RunCmd(object):
         finally:
             f.close()
 
-        return self.returncode, buff
+        return self.return_code, buff
 
     def run_fd(self, cmd, out_file, timeout=0, shell=False, cwd=None):
         """ Runs the command and writes the output into the user specified file object.
@@ -215,8 +235,8 @@ class RunCmd(object):
         Args:
             cmd     : Command to run.
             out_file: File object which the command will write its output to.
-            timeout : Seconds to wait before terminating command. Timeout must be an positive integer.
-                      If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
+            timeout : Seconds to wait before terminating command. Timeout must be an positive
+                      integer. If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
             shell   : Boolean to indicate if the shell should be invoked or not. Defaults to False.
             cwd:    : Directory to run command in. If none is given the command will be run in the
                       current directory. Default is None.
@@ -225,8 +245,10 @@ class RunCmd(object):
             RunCmdInterruptError    : Command was interrupted, e.g. a Keyboard interrupt signal.
         """
         self.cmd = cmd
+
+        # if no command was sent in, consider it auccessful and return.
         if cmd is None or len(cmd) == 0:
-            self.returncode = 0
+            self.return_code = 0
             return
 
         if out_file is None:
@@ -235,64 +257,47 @@ class RunCmd(object):
                                           'receive None instead')
 
         timeout = sys.maxint if int(timeout) <= 0 else int(timeout)
-        pipe = _PipeData(out_file)
+        with _PipeData(out_file) as pipe:
+            p = None
+            try:
+                if sys.platform == 'win32':
+                    p = subprocess.Popen(cmd,
+                                         shell=shell,
+                                         cwd=cwd,
+                                         stdout=pipe.in_fd,
+                                         stderr=subprocess.STDOUT)
+                else:
+                    # in unix-like system group all predecessors of a process under the same id,
+                    # making it easier to them all at once. Windows already does this.
+                    p = subprocess.Popen(cmd,
+                                         shell=shell,
+                                         cwd=cwd,
+                                         stdout=pipe.in_fd,
+                                         stderr=subprocess.STDOUT,
+                                         preexec_fn=os.setsid)
 
-        try:
-            if sys.platform == 'win32':
-                p = subprocess.Popen(cmd,
-                                     shell=shell,
-                                     cwd=cwd,
-                                     stdout=pipe.in_fd,
-                                     stderr=subprocess.STDOUT)
-            else:
-                # in unix-like system group all predecessors of a process under the same id,
-                # making it easier to them all at once. Windows already does this.
-                p = subprocess.Popen(cmd,
-                                     shell=shell,
-                                     cwd=cwd,
-                                     stdout=pipe.in_fd,
-                                     stderr=subprocess.STDOUT,
-                                     preexec_fn=os.setsid)
+                # Continuously poll the process "p" until either the process has finished or
+                # process timeout. If the process has exceeded the timeout limit, kill it.
+                # Note the "pipe" is continuously reading the output in a the background thread.
+                curr_time = 0
+                while p.poll() is None and curr_time < timeout:
+                    curr_time += RunCmd.WAIT_INTERVAL
+                    time.sleep(RunCmd.WAIT_INTERVAL)
 
-        except (ValueError, WindowsError, OSError):
-            self.returncode = RunCmd.INVALID_INPUT_ERR
-            
-            _tmp = cStringIO.StringIO()
-            traceback.print_exc(file=_tmp)
-            _tmp_stacktrace = _tmp.getvalue()
-            _tmp.close()
-            raise RunCmdInvalidInputError(cmd, _tmp_stacktrace)
+                if curr_time < timeout:
+                    self.return_code = p.returncode
+                else:
+                    self.return_code = RunCmd.TIMEOUT_ERR
+                    self._kill(p.pid)
 
-        try:
-            # Continuously poll the process "p" until either the process has finished or process timeout.
-            # if process has timeout, kill it. The "pipe" is reading the output in the background thread,
-            # hence it seems as though nothing is happening here.
-            curr_time = 0
-            pipe.start_monitor()
-            while p.poll() is None and curr_time < timeout:
-                curr_time += RunCmd.WAIT_INTERVAL
-                time.sleep(RunCmd.WAIT_INTERVAL)
+            except (WindowsError, OSError):
+                self.return_code = RunCmd.INVALID_INPUT_ERR
+                raise RunCmdInvalidInputError(cmd, traceback.format_exc())
 
-            if curr_time < timeout:
-                self.returncode = p.returncode
-            else:
-                self.returncode = RunCmd.TIMEOUT_ERR
+            except KeyboardInterrupt:
+                self.return_code = RunCmd.INTERRUPT_ERR
                 self._kill(p.pid)
-                p.wait()
-
-        except (OSError, KeyboardInterrupt, SystemExit, WindowsError):
-            # system error or keyboard interrupt
-            self.returncode = RunCmd.INTERRUPT_ERR
-
-            _tmp = cStringIO.StringIO()
-            traceback.print_exc(file=_tmp)
-            _tmp_stacktrace = _tmp.getvalue()
-            _tmp.close()
-            raise RunCmdInterruptError(cmd, _tmp_stacktrace)
-
-        finally:
-            pipe.stop_monitor()
-            pipe.join()
+                raise RunCmdInterruptError(cmd, traceback.format_exc())
 
     @staticmethod
     def _kill(pid):
@@ -324,7 +329,8 @@ def main():
                       action='store',
                       type='string',
                       dest='cmd',
-                      help='Command to run. Must be enclosed in double quotes, e.g. -c"echo Hello"')
+                      help='Command to run. Must be enclosed in double quotes, '
+                           'e.g. -c"echo Hello"')
 
     parser.add_option('-t', '--timeout',
                       action='store',
@@ -354,17 +360,16 @@ def main():
         return 0
 
     cmd = RunCmd()
-    returncode, out = cmd.run(options.cmd.strip('"'),
-                              timeout=options.timeout,
-                              shell=options.is_shell,
-                              cwd=options.dir)
+    return_code, out = cmd.run(options.cmd.strip('"'),
+                               timeout=options.timeout,
+                               shell=options.is_shell,
+                               cwd=options.dir)
     print out
-    return returncode
-
+    return return_code
 
 
 if __name__ == "__main__":
-    returncode = main()
-    sys.exit(returncode)
+    ret = main()
+    sys.exit(ret)
 
 

@@ -15,7 +15,8 @@ sys.path.insert(0, ROOT_DIR)
 
 from runcmd import *
 
-# Dictionary of commands for each platform. Each entry in dictionary is the output of sys.platform.
+# Dictionary of commands for each platform. Each entry in dictionary is the
+# output of sys.platform.
 _cmds = {
 
     'win32': {
@@ -61,7 +62,7 @@ class RunCmdTest(unittest.TestCase):
                              stderr=subprocess.STDOUT)
         o = p.communicate()[0]
 
-        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, cmd.return_code)
         self.assertEqual(ret, 0)
         self.assertEqual(out, o)
 
@@ -70,7 +71,7 @@ class RunCmdTest(unittest.TestCase):
         """
         cmd = RunCmd()
         cmd.run(test_cmds['sleep'] % (10), timeout=1, shell=True)
-        self.assertEqual(cmd.returncode, RunCmd.TIMEOUT_ERR)
+        self.assertEqual(cmd.return_code, RunCmd.TIMEOUT_ERR)
 
     def test_set_cwd(self):
         """ Change the current working directory using cwd
@@ -86,7 +87,7 @@ class RunCmdTest(unittest.TestCase):
                              stderr=subprocess.STDOUT)
         o = p.communicate()[0]
 
-        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, cmd.return_code)
         self.assertEqual(ret, 0)
         self.assertEqual(out, o)
 
@@ -96,11 +97,11 @@ class RunCmdTest(unittest.TestCase):
         cmd = RunCmd()
 
         ret, out = cmd.run(None)
-        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, cmd.return_code)
         self.assertEqual(ret, 0)
 
         ret, out = cmd.run('')
-        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, cmd.return_code)
         self.assertEqual(ret, 0)
 
     def test_null_fd(self):
@@ -126,7 +127,7 @@ class RunCmdTest(unittest.TestCase):
                              stderr=subprocess.STDOUT)
         o = p.communicate()[0]
 
-        self.assertEqual(ret, cmd.returncode)
+        self.assertEqual(ret, cmd.return_code)
         self.assertEqual(ret, 0)
         self.assertEqual(out, o)
 
@@ -136,17 +137,17 @@ class RunCmdTest(unittest.TestCase):
         """
         f = cStringIO.StringIO()
         cmd = RunCmd()
-        cmd.run_fd(test_cmds['ls'], f, timeout=0, shell=True)
+        cmd.run_fd(test_cmds['echo'] % 'Hello', f, timeout=0, shell=True)
         out = f.getvalue()
         f.close()
 
-        p = subprocess.Popen(test_cmds['ls'],
+        p = subprocess.Popen(test_cmds['echo'] % 'Hello',
                              shell=True,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
         o = p.communicate()[0]
 
-        self.assertEqual(cmd.returncode, 0)
+        self.assertEqual(cmd.return_code, 0)
         self.assertEqual(out, o)
 
     def test_invalid_input(self):
