@@ -9,8 +9,9 @@ import cStringIO
 import traceback
 import signal
 import array
+import contextlib
 
-__version_info__ = ('0', '1', '0')
+__version_info__ = ('0', '2', '1')
 __version__ = '.'.join(__version_info__)
 
 # defined WindowsError exception for platforms which
@@ -215,14 +216,10 @@ class RunCmd(object):
             RunCmdInvalidInputError : Command had invalid parameters.
             RunCmdInterruptError    : Command was interrupted, e.g. a Keyboard interrupt signal.
         """
-        f = cStringIO.StringIO()
-        # In the event of an exception, we attempt to close the string buffer "f"
-        # before raising the exception
-        try:
+        buff = None
+        with contextlib.closing(cStringIO.StringIO()) as f:
             self.run_fd(cmd, f, timeout, shell, cwd)
             buff = f.getvalue()
-        finally:
-            f.close()
 
         return self.return_code, buff
 
