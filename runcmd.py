@@ -1,5 +1,29 @@
 #! /usr/bin/env python
 
+#
+# The MIT License (MIT)
+#
+# Copyright (c) 2014 Wen Shan Chang
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
+
 import subprocess
 import threading
 import os
@@ -17,8 +41,10 @@ __version__ = '.'.join(__version_info__)
 # defined WindowsError exception for platforms which
 # do not have it
 if not getattr(__builtins__, "WindowsError", None):
+
     class WindowsError(OSError):
         pass
+
 
 class RunCmdError(Exception):
     """
@@ -205,12 +231,13 @@ class RunCmd(object):
             cmd     : Command to run.
             timeout : Seconds to wait before terminating command. Timeout must be an positive
                       integer. If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
-            shell   : Boolean to indicate if the shell should be invoked or not. Defaults to False.
-            cwd:    : Directory to run command in. If none is given the command will be run in the
-                      current directory. Default is None.
+            shell   : Boolean to indicate if the shell should be invoked or not.
+                      Defaults to False.
+            cwd:    : Directory to run command in. If none is given the command will be run in
+                      the current directory. Default is None.
         Returns:
-            A tuple of (returncode, out) where returncode is the returncode from the subprocess and
-            out is a buffer containing the output.
+            A tuple of (returncode, out) where returncode is the returncode from the subprocess
+            and out is a buffer containing the output.
 
         Exceptions:
             RunCmdInvalidInputError : Command had invalid parameters.
@@ -234,16 +261,17 @@ class RunCmd(object):
             out_file: File object which the command will write its output to.
             timeout : Seconds to wait before terminating command. Timeout must be an positive
                       integer. If timeout <= 0, RunCmd will wait indefinitely. Defaults to 0.
-            shell   : Boolean to indicate if the shell should be invoked or not. Defaults to False.
-            cwd:    : Directory to run command in. If none is given the command will be run in the
-                      current directory. Default is None.
+            shell   : Boolean to indicate if the shell should be invoked or not.
+                      Defaults to False.
+            cwd:    : Directory to run command in. If none is given the command will be run in
+                      the current directory. Default is None.
         Exceptions:
             RunCmdInvalidInputError : Command had invalid parameters.
             RunCmdInterruptError    : Command was interrupted, e.g. a Keyboard interrupt signal.
         """
         self.cmd = cmd
 
-        # if no command was sent in, consider it auccessful and return.
+        # if no command was sent in, consider it successful and return.
         if cmd is None or len(cmd) == 0:
             self.return_code = 0
             return
