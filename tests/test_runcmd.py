@@ -25,15 +25,12 @@
 #
 
 
+__author__ = 'Wen Shan Chang'
 
-__author__ = 'Chang'
-
-
+import unittest
 import os
 import sys
-import subprocess
-import cStringIO
-import unittest
+import StringIO
 
 # add module's root folder as part of search path
 ROOT_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
@@ -161,7 +158,7 @@ class RunCmdTest(unittest.TestCase):
         """ use RunCmd.run_fd() instead of RunCmd.run().
         Pass in a file descriptor to the command.
         """
-        f = cStringIO.StringIO()
+        f = StringIO.StringIO()
         cmd = RunCmd()
         cmd.run_fd(test_cmds['echo'] % 'Hello', f, timeout=0, shell=True)
         out = f.getvalue()

@@ -29,14 +29,14 @@ import threading
 import os
 import sys
 import time
-import cStringIO
+import StringIO
 import traceback
 import signal
-import array
 import contextlib
 
-__version_info__ = ('0', '2', '1')
+__version_info__ = ('0', '2', '3')
 __version__ = '.'.join(__version_info__)
+__author__ = 'Wen Shan Chang'
 
 # defined WindowsError exception for platforms which
 # do not have it
@@ -125,7 +125,7 @@ class _PipeData(threading.Thread):
         self._dest_file = dest_file
         self._out_file = os.fdopen(r, 'rb')
         self._finish_read = False
-        self._buffer = array.array('B', (0 for _ in xrange(_PipeData.CHUNK_SIZE)))
+        self._buffer = bytearray(_PipeData.CHUNK_SIZE)
 
         super(_PipeData, self).__init__()
 
@@ -158,8 +158,8 @@ class _PipeData(threading.Thread):
         destination file object.
         """
         read_size = self._out_file.readinto(self._buffer)
-        while read_size > 0:
-            self._dest_file.write(self._buffer[:read_size].tostring())
+        while read_size:
+            self._dest_file.write(self._buffer[:read_size])
             read_size = self._out_file.readinto(self._buffer)
         self._dest_file.flush()
 
@@ -244,7 +244,7 @@ class RunCmd(object):
             RunCmdInterruptError    : Command was interrupted, e.g. a Keyboard interrupt signal.
         """
         buff = None
-        with contextlib.closing(cStringIO.StringIO()) as f:
+        with contextlib.closing(StringIO.StringIO()) as f:
             self.run_fd(cmd, f, timeout, shell, cwd)
             buff = f.getvalue()
 
