@@ -40,7 +40,7 @@ sys.path.insert(0, ROOT_DIR)
 from runcmd import *
 
 # setup util file
-output_cmd = 'python ' + os.path.join('..', 'util', 'generate_output.py') + ' %d %s %s'
+output_cmd = 'python ' + os.path.join(ROOT_DIR, 'util', 'generate_output.py') + ' %d %s %s'
 
 
 # Dictionary of commands for each platform. Each entry in dictionary is the
@@ -171,8 +171,9 @@ class RunCmdTest(unittest.TestCase):
         """ Passed in a file object opened in read mode and a closed file object
         """
         is_ok = False
+        test_bad_fd_file = os.path.join(ROOT_DIR, 'tests', 'test_bad_fd.txt')
         # file opened in read mode
-        with open('test_bad_fd.txt', 'rb') as f:
+        with open(test_bad_fd_file, 'rb') as f:
             try:
                 cmd = RunCmd()
                 cmd.run_fd(test_cmds['echo'] % 'Hello', f, shell=True)
@@ -180,7 +181,7 @@ class RunCmdTest(unittest.TestCase):
                 is_ok = True
 
         # file closed
-        f = open('test_bad_fd.txt', 'wb')
+        f = open(test_bad_fd_file, 'wb')
         f.close()
         try:
             cmd = RunCmd()
@@ -200,7 +201,7 @@ class RunCmdTest(unittest.TestCase):
         try:
             cmd = RunCmd()
             sim.start()
-            cmd.run_fd(test_cmds['sim_log'] % (1, 'k', 1), f)
+            cmd.run_fd(test_cmds['sim_log'] % (1, 'k', 1), f, shell=True)
         except RunCmdInternalError:
             is_ok = True
         finally:

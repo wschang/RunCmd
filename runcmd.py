@@ -34,7 +34,7 @@ import traceback
 import signal
 import contextlib
 
-__version_info__ = ('0', '2', '5')
+__version_info__ = ('0', '2', '6')
 __version__ = '.'.join(__version_info__)
 __author__ = 'Wen Shan Chang'
 
@@ -332,12 +332,12 @@ class RunCmd(object):
 
                 if pipe.is_error:
                     # pipe error
-                    self._kill(p.pid)
+                    self._kill(p)
                     raise RunCmdInternalError(pipe.error_msg)
                 elif curr_time >= timeout:
                     # timeout
                     self.return_code = RunCmd.TIMEOUT_ERR
-                    self._kill(p.pid)
+                    self._kill(p)
                 else:
                     #normal case
                     self.return_code = p.returncode
@@ -348,25 +348,27 @@ class RunCmd(object):
 
             except KeyboardInterrupt:
                 self.return_code = RunCmd.INTERRUPT_ERR
-                self._kill(p.pid)
+                self._kill(p)
                 raise RunCmdInterruptError(cmd, traceback.format_exc())
 
     @staticmethod
-    def _kill(pid):
+    def _kill(p):
         """ Kill the process immediately.
 
         Args:
-            pid: pid of process to be killed.
+            p: sub-process to be killed.
         """
-        # Popen.kill() does not kill processes in Windows, only attempts to terminate it, hence
-        # we need to kill process here.
-        if sys.platform == 'win32':
-            k = subprocess.Popen('TASKKILL /PID {} /T /F >NUL 2>&1'.format(pid), shell=True)
-            k.communicate()
-        else:
-            pid = -pid
-            os.kill(pid, signal.SIGTERM)
-            os.waitpid(pid, 0)
+        if p.poll() is None:
+            # Popen.kill() does not kill processes in Windows, only attempts to terminate it,
+            # hence we need to kill process here.
+            if sys.platform == 'win32':
+                k = subprocess.Popen('TASKKILL /PID {} /T /F >NUL 2>&1'.format(p.pid),
+                                     shell=True)
+                k.communicate()
+            else:
+                pid = -p.pid
+                os.kill(pid, signal.SIGTERM)
+                os.waitpid(pid, 0)
 
 
 def main():
