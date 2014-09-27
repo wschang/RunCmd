@@ -34,7 +34,7 @@ import traceback
 import signal
 import contextlib
 
-__version_info__ = ('0', '2', '4')
+__version_info__ = ('0', '2', '5')
 __version__ = '.'.join(__version_info__)
 __author__ = 'Wen Shan Chang'
 
@@ -117,7 +117,7 @@ class _PipeData(threading.Thread):
         _buffer     : a buffer used to temporarily store the chunks of data read from the source.
     """
     # Number of bytes to read in at a time.
-    CHUNK_SIZE = 1
+    CHUNK_SIZE = 1024
 
     def __init__(self, dest_file):
         """ Constructor
