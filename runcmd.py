@@ -34,7 +34,7 @@ import traceback
 import signal
 import contextlib
 
-__version_info__ = ('0', '2', '3')
+__version_info__ = ('0', '2', '4')
 __version__ = '.'.join(__version_info__)
 __author__ = 'Wen Shan Chang'
 
@@ -50,12 +50,11 @@ class RunCmdError(Exception):
     """
     Base exception for RunCmd.
     """
-    def __init__(self, cmd, out):
-        self._cmd = cmd
-        self._out = out
+    def __init__(self, err_msg):
+        self._err_msg = err_msg
 
     def __str__(self):
-        return 'Command \"%s\" raised exception\n. %s' % (self._cmd, self._out)
+        return self._err_msg
 
 
 class RunCmdInternalError(RunCmdError):
@@ -63,26 +62,27 @@ class RunCmdInternalError(RunCmdError):
     An internal error has occurred. This is an error you do not want to see.
     """
     def __init__(self, err_msg):
-        self.err_msg = err_msg
-
-    def __str__(self):
-        return self.err_msg
+        super(RunCmdInternalError, self).__init__(err_msg)
 
 
 class RunCmdInvalidInputError(RunCmdError):
     """
     Input(s) to cmd was invalid e.g. using shell=False when the shell was required.
     """
-    def __init__(self, cmd, out):
-        super(RunCmdInvalidInputError, self).__init__(cmd, out)
+    def __init__(self, err_msg):
+        super(RunCmdInvalidInputError, self).__init__(err_msg)
 
 
 class RunCmdInterruptError(RunCmdError):
     """
     cmd was interrupted.
     """
-    def __init__(self, cmd, out):
-        super(RunCmdInterruptError, self).__init__(cmd, out)
+    def __init__(self, cmd, err_msg):
+        self._cmd = cmd
+        super(RunCmdInterruptError, self).__init__(err_msg)
+
+    def __str__(self):
+        return 'Command "{}" raised exception\n. {}'.format(self._cmd, self._err_msg)
 
 
 class _PipeData(threading.Thread):
@@ -90,7 +90,14 @@ class _PipeData(threading.Thread):
     in the background.
 
     Use the "with" statement to manage the context of the _PipeData instance,
-    i.e. "with _PipeData(out_file) as pipe"
+    e.g.:
+        is_keep_reading = True
+        with _PipeData(out_file) as pipe:
+            while is_keep_reading and not pipe.is_error:
+                # do something.
+
+            if pipe.is_error:
+                print pipe.error_msg
 
     Once the pipe has finished, it cannot be reused. Instead, a new PipeData instance must be
     created.
@@ -101,13 +108,16 @@ class _PipeData(threading.Thread):
                       source of the data to be read
         dest_file   : the destination file object. This is the file where the data is
                       written out to
+        is_error    : error status. True if an unrecoverable error has occurred. The caller
+                      should monitor this value regularly.
+        error_msg   : contains the error message. If no error had occurred, this is set to None.
 
         _out_file   : an internal file object representing the output of pipe.
         _finish_read : boolean to indicate when the pipe has finished reading from the source.
         _buffer     : a buffer used to temporarily store the chunks of data read from the source.
     """
     # Number of bytes to read in at a time.
-    CHUNK_SIZE = 1024
+    CHUNK_SIZE = 1
 
     def __init__(self, dest_file):
         """ Constructor
@@ -115,24 +125,31 @@ class _PipeData(threading.Thread):
         Args:
             dest_file: file object where the data will be written into.
         """
-        # we expect the dest file to be passed in.
-        if dest_file is None:
-            raise RunCmdInternalError('Error: _PipeData expects a file object for parameter '
-                                      '"dest_file"')
         r, w = os.pipe()
-        self.is_stop = False
+        # set both is_stop and finish_read to True during init to avoid hanging if _PipeData
+        # fails to initialise. Set both booleans to False upon __enter__
+        self.is_stop = True
+        self._finish_read = True
         self.in_fd = w
+        self.is_error = False
+        self.error_msg = None
         self._dest_file = dest_file
         self._out_file = os.fdopen(r, 'rb')
-        self._finish_read = False
         self._buffer = bytearray(_PipeData.CHUNK_SIZE)
+
+        # we expect a valid dest file to be passed in. The dest_file is not guaranteed to be a
+        # file (e.g. StringIO) hence we cannot check its mode directly.
+        try:
+            dest_file.write('')
+        except (IOError, ValueError):
+            raise RunCmdInvalidInputError('Error: file object passed in is not writable '
+                                          '/ closed.')
 
         super(_PipeData, self).__init__()
 
     def __enter__(self):
-        if self.is_stop:
-            raise RunCmdInternalError('Error: _PipeData instance cannot be used twice.')
-
+        self._finish_read = False
+        self.is_stop = False
         self.start()
         return self
 
@@ -145,23 +162,29 @@ class _PipeData(threading.Thread):
 
         This runs in a background thread.
         """
-        while not self.is_stop:
+        while not self.is_stop and not self.is_error:
             self._read()
             time.sleep(0.2)
 
         # read all remaining buffer input from pipe.
-        self._read()
+        if not self.is_error:
+            self._read()
         self._finish_read = True
 
     def _read(self):
         """ Read all content buffered in the pipe one chunk at a time and write to the
         destination file object.
         """
-        read_size = self._out_file.readinto(self._buffer)
-        while read_size:
-            self._dest_file.write(self._buffer[:read_size])
+        try:
+            # this blocks until out_file writes at least CHUNK_SIZE worth of data.
             read_size = self._out_file.readinto(self._buffer)
-        self._dest_file.flush()
+            while read_size:
+                self._dest_file.write(self._buffer[:read_size])
+                read_size = self._out_file.readinto(self._buffer)
+            self._dest_file.flush()
+        except Exception as e:
+            self.is_error = True
+            self.error_msg = "{} raised exception {}".format(self.__class__.__name__, str(e))
 
     def _stop(self):
         """ Signal to pipe to stop reading from in_fd and write everything out.
@@ -276,10 +299,8 @@ class RunCmd(object):
             self.return_code = 0
             return
 
-        if out_file is None:
-            raise RunCmdInvalidInputError(cmd,
-                                          'Error: "out_file" parameter expected a file object,'
-                                          'receive None instead')
+        if not out_file:
+            raise RunCmdInvalidInputError("Error: out_file is None; expected file object.")
 
         timeout = sys.maxint if int(timeout) <= 0 else int(timeout)
         with _PipeData(out_file) as pipe:
@@ -305,19 +326,25 @@ class RunCmd(object):
                 # process timeout. If the process has exceeded the timeout limit, kill it.
                 # Note the "pipe" is continuously reading the output in a the background thread.
                 curr_time = 0
-                while p.poll() is None and curr_time < timeout:
+                while p.poll() is None and curr_time < timeout and not pipe.is_error:
                     curr_time += RunCmd.WAIT_INTERVAL
                     time.sleep(RunCmd.WAIT_INTERVAL)
 
-                if curr_time < timeout:
-                    self.return_code = p.returncode
-                else:
+                if pipe.is_error:
+                    # pipe error
+                    self._kill(p.pid)
+                    raise RunCmdInternalError(pipe.error_msg)
+                elif curr_time >= timeout:
+                    # timeout
                     self.return_code = RunCmd.TIMEOUT_ERR
                     self._kill(p.pid)
+                else:
+                    #normal case
+                    self.return_code = p.returncode
 
             except (WindowsError, OSError):
                 self.return_code = RunCmd.INVALID_INPUT_ERR
-                raise RunCmdInvalidInputError(cmd, traceback.format_exc())
+                raise RunCmdInvalidInputError(traceback.format_exc())
 
             except KeyboardInterrupt:
                 self.return_code = RunCmd.INTERRUPT_ERR
@@ -334,7 +361,7 @@ class RunCmd(object):
         # Popen.kill() does not kill processes in Windows, only attempts to terminate it, hence
         # we need to kill process here.
         if sys.platform == 'win32':
-            k = subprocess.Popen('TASKKILL /PID %d /T /F >NUL 2>&1' % (pid), shell=True)
+            k = subprocess.Popen('TASKKILL /PID {} /T /F >NUL 2>&1'.format(pid), shell=True)
             k.communicate()
         else:
             pid = -pid

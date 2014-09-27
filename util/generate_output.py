@@ -28,7 +28,7 @@
 #
 # generate_output.py
 #
-# Generate an output of a specified size to stdout.
+# Generate an output of a specified size to stdout with an optional delay.
 #
 # This is useful for testing how RunCmd handles large output. For example
 # the snippet of code below will generate 50 MB of data and pipe the data to a file
@@ -45,6 +45,7 @@
 __author__ = 'Wen Shan Chang'
 
 import sys
+import time
 
 #number of bytes per KB, MB, GB
 UNIT_VALUES = {
@@ -55,7 +56,11 @@ UNIT_VALUES = {
 
 STRING = 'This is a test string from generate_output.py: '
 
-def main(size, file_obj):
+def main(size, file_obj, timeout):
+
+    timeout = timeout if timeout >= 0 else 0
+    time.sleep(timeout)
+
     if size <= 0:
         return
 
@@ -71,8 +76,11 @@ def main(size, file_obj):
 
 if __name__ == "__main__":
 
-    if (len(sys.argv) != 3):
-        print "Usage: python generate_output.py size unit, where size is an integer, unit is [k|m|g]"
+    if (len(sys.argv) < 3):
+        print "Usage: python generate_output.py size unit [timeout], "\
+                "where size is an integer, " \
+                "unit is [k|m|g], " \
+                "timeout is an optional argument to delay printout for x seconds. Defaults to 0."
         print " e.g. Generate a 2 megabyte worth of output: python generate_output.py 2 m"
         sys.exit(1)
 
@@ -94,8 +102,17 @@ if __name__ == "__main__":
         print "Error: size must be > 0"
         is_error = True
 
+    #handle optional parameters.
+    timeout = 0
+    if len(sys.argv) == 4:
+        try:
+            timeout = int(sys.argv[3])
+        except ValueError:
+            print "Error: timeout values must be an integer."
+            is_error = True
+
     if not is_error:
-        main(data_size, sys.stdout)
+        main(data_size, sys.stdout, timeout)
     else:
         print "Exiting."
         sys.exit(1)

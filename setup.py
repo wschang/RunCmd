@@ -1,10 +1,11 @@
 from distutils.core import setup
+from runcmd import __version__ as runcmd_version
 
 setup(
     name='runcmd',
-    version='0.2.3',
+    version=runcmd_version,
     packages=[''],
-    url='',
+    url='https://github.com/wschang/RunCmd',
     license='MIT',
     author='Wen Shan Chang',
     author_email='shan.and.android@gmail.com',

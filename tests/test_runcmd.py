@@ -28,6 +28,7 @@
 __author__ = 'Wen Shan Chang'
 
 import unittest
+import threading
 import os
 import sys
 import StringIO
@@ -38,6 +39,10 @@ sys.path.insert(0, ROOT_DIR)
 
 from runcmd import *
 
+# setup util file
+output_cmd = 'python ' + os.path.join('..', 'util', 'generate_output.py') + ' %d %s %s'
+
+
 # Dictionary of commands for each platform. Each entry in dictionary is the
 # output of sys.platform.
 _cmds = {
@@ -46,14 +51,18 @@ _cmds = {
         'sleep': 'ping -w 1000 -n %d 1.1.1.1 >NUL',
         'ls'   : 'dir',
         'echo' : 'echo %s',
-        'no_shell': '%s -c "print \'Hello World\'"' % (sys.executable)
+        'cat'  : 'type %s',
+        'no_shell': '%s -c "print \'Hello World\'"' % (sys.executable),
+        'sim_log': output_cmd
     },
 
     'linux2': {
         'sleep': 'sleep %d',
         'ls'   : 'ls',
         'echo' : 'echo %s',
-        'no_shell': 'ls'
+        'cat'  : 'cat %s',
+        'no_shell': 'ls',
+        'sim_log': output_cmd
     }
 }
 
@@ -63,6 +72,26 @@ try:
     test_cmds = _cmds[sys.platform]
 except KeyError:
     test_cmds = _cmds['linux2']
+
+
+
+class _SimulateFileClose(threading.Thread):
+    """ Simulate file being close by an external module.
+
+    This is used to test how _PipeData handles sudden lose to the file.
+    """
+    def __init__(self, f, timeout=0):
+        self.file_obj = f
+        self.timeout = timeout
+
+        super(_SimulateFileClose, self).__init__()
+
+    def run(self):
+        curr_time = 0
+        while curr_time < self.timeout:
+            time.sleep(0.2)
+            curr_time += 0.2
+        self.file_obj.close()
 
 
 class RunCmdTest(unittest.TestCase):
@@ -137,6 +166,49 @@ class RunCmdTest(unittest.TestCase):
             return
 
         self.assertTrue(False)
+
+    def test_bad_fd(self):
+        """ Passed in a file object opened in read mode and a closed file object
+        """
+        is_ok = False
+        # file opened in read mode
+        with open('test_bad_fd.txt', 'rb') as f:
+            try:
+                cmd = RunCmd()
+                cmd.run_fd(test_cmds['echo'] % 'Hello', f, shell=True)
+            except RunCmdInvalidInputError:
+                is_ok = True
+
+        # file closed
+        f = open('test_bad_fd.txt', 'wb')
+        f.close()
+        try:
+            cmd = RunCmd()
+            cmd.run_fd(test_cmds['echo'] % 'Hello', f, shell=True)
+        except RunCmdInvalidInputError:
+            is_ok = True
+
+        self.assertTrue(is_ok)
+
+
+    def test_fail_fd(self):
+        """ Simulate case where RunCmd loses access to file object before command is complete.
+        """
+        f = open('tmp.txt', 'wb')
+        sim = _SimulateFileClose(f, 0.5)
+        is_ok = False
+        try:
+            cmd = RunCmd()
+            sim.start()
+            cmd.run_fd(test_cmds['sim_log'] % (1, 'k', 1), f)
+        except RunCmdInternalError:
+            is_ok = True
+        finally:
+            sim.join()
+
+        self.assertTrue(is_ok)
+
+
 
     def test_no_shell(self):
         """ Run a command without using the shell.
